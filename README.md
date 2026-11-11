@@ -16,8 +16,10 @@ que la mediana de avisos comparables: mismos ambientes y mismo barrio si hay al 
 powershell -ExecutionPolicy Bypass -File programar.ps1
 ```
 
-Crea la tarea `TrackerAlquileres`: todos los días a las 12:00, o apenas prendas la PC si estaba apagada.
-`data/listings.json` guarda el historial (primera vez visto, cambios de precio, avisos dados de baja).
+Crea la tarea `TrackerAlquileres`: a las 12:00 y cada vez que iniciás sesión (si ya se actualizó hace menos de 20 h, no hace nada).
+Corre `actualizar.ps1`: relevamiento + `git push` de los datos. La página `index.html` se publica en GitHub Pages, así que se ve desde el celu.
+Necesita que esta PC se prenda de vez en cuando y que git tenga guardado el login de GitHub.
+Se probó correrlo en GitHub Actions y no sirve: Zonaprop bloquea a los servidores de GitHub.
 
 ## Límites conocidos
 

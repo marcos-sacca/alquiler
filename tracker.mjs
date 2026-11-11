@@ -32,7 +32,7 @@ export function parsePagina(html) {
       usd: /USD/.test(price),
       precio: /\d/.test(price) ? num(price.replace(/[^\d.,]/g, "")) : null,
       exp: /\$\s*[\d.]+/.test(exp) ? num(grab(exp, /\$\s*([\d.]+)/)) : null,
-      m2: num(grab(feats, /(\d+(?:[.,]\d+)?)\s*m²/) ?? NaN) || null,
+      m2: num(grab(feats, /(\d+(?:[.,]\d+)?)\s*m²/) ?? NaN) >= 8 ? num(grab(feats, /(\d+(?:[.,]\d+)?)\s*m²/)) : null, // <8 m² es un dato mal cargado
       amb: Number(grab(feats, /(\d+)\s*amb/)) || null,
       dir: txt(grab(c, /location-address[^>]*>(.*?)<\/h4>/s)),
       loc: txt(grab(c, /POSTING_CARD_LOCATION">(.*?)<\/h4>/s)),
@@ -107,6 +107,8 @@ async function main() {
   const hoy = new Date().toISOString().slice(0, 10);
   fs.mkdirSync("data", { recursive: true });
   const db = fs.existsSync(DB) ? JSON.parse(fs.readFileSync(DB, "utf8")) : { items: {} };
+  // --diario: para la tarea que corre al prender la PC; si ya se relevó hace poco, no vuelvo a pedir.
+  if (process.argv.includes("--diario") && db.updated && Date.now() - new Date(db.updated) < 20 * 36e5) return console.log("Ya actualizado hoy.");
   const vistos = await relevar(db, hoy);
   if (!vistos) throw new Error("No se pudo bajar ningún aviso (¿bloqueo?): no toco los datos.");
   puntuar(Object.values(db.items));
