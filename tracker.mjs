@@ -13,13 +13,33 @@ const LOC_OK = /Vicente L[oó]pez|Mart[ií]nez|Villa Adelina/i;
 // Filtros del propio sitio. Zonaprop bloquea (403) de la página 10 en adelante, por eso la búsqueda de 2 amb. tiene una versión
 // "hasta $900.000" (cabe en 9 páginas) para no perder ningún aviso dentro del presupuesto.
 const AMBS = ["1-ambiente", "2-ambientes", "2-ambientes-menos-900000-pesos"];
-const MAX_PAGINAS = 9, PAUSA_MS = 4000, TOPE = 900_000, PISO = 200_000;
+const MAX_PAGINAS = 9, PAUSA_MS = 4000, TOPE = 900_000, PISO = 200_000, MAX_DETALLES = 80; // MAX_DETALLES: páginas de aviso que se piden por corrida
 const UA = "alquiler-tracker-personal/1.0";
 const DB = "data/listings.json";
 
 const txt = (s) => (s ?? "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 const num = (s) => Number(String(s).replace(/\./g, "").replace(",", "."));
 const grab = (h, re) => h.match(re)?.[1];
+
+const NUM = { un: 1, uno: 1, dos: 2, tres: 3 };
+// El contrato no es un dato del aviso: solo aparece si el dueño lo escribe en la descripción ("contrato 2 años", "18 meses de contrato").
+export function contratoMeses(texto) {
+  const N = "(\\d+|uno?|dos|tres)", U = "(a[ñn]os?|meses)";
+  const m = texto.match(new RegExp(`contrato[^.\\d]{0,25}?${N}\\s*${U}`, "i")) ?? texto.match(new RegExp(`${N}\\s*${U}\\s*de\\s*contrato`, "i"));
+  if (!m) return null;
+  const n = NUM[m[1].toLowerCase()] ?? Number(m[1]);
+  return /^a/i.test(m[2]) ? n * 12 : n;
+}
+
+// La página de cada aviso dice "Publicado hoy / ayer / hace 70 días". Devuelve los días desde la publicación.
+export function diasPublicado(html) {
+  const m = html.match(/Publicado\s+(hoy|ayer|hace\s+(\d+)\s+(d[ií]as?|semanas?|mes(?:es)?|a[ñn]os?))/i);
+  if (!m) return null;
+  if (/hoy/i.test(m[1])) return 0;
+  if (/ayer/i.test(m[1])) return 1;
+  const n = Number(m[2]), u = m[3].toLowerCase();
+  return n * (u.startsWith("d") ? 1 : u.startsWith("s") ? 7 : u.startsWith("m") ? 30 : 365);
+}
 
 export function parsePagina(html) {
   return html.split('data-qa="posting PROPERTY"').slice(1).map((c) => {
@@ -36,14 +56,15 @@ export function parsePagina(html) {
       amb: Number(grab(feats, /(\d+)\s*amb/)) || null,
       dir: txt(grab(c, /location-address[^>]*>(.*?)<\/h4>/s)),
       loc: txt(grab(c, /POSTING_CARD_LOCATION">(.*?)<\/h4>/s)),
+      contrato: contratoMeses(txt(grab(c, /POSTING_CARD_DESCRIPTION">(.*?)<\/h2>/s))),
     };
   }).filter((x) => x.id);
 }
 
 // curl y no fetch: Cloudflare desafía al fetch de Node (huella TLS) pero sirve normal a curl, que viene con Windows.
 async function bajar(ruta) {
-  const url = `https://www.zonaprop.com.ar/${ruta}.html`;
-  const { stdout } = await run(process.platform === "win32" ? "curl.exe" : "curl", ["-s", "-A", UA, "-w", "\n%{http_code}", url], { maxBuffer: 1 << 26, encoding: "utf8" });
+  const url = ruta.startsWith("http") ? ruta : `https://www.zonaprop.com.ar/${ruta}.html`;
+  const { stdout } = await run(process.platform === "win32" ? "curl.exe" : "curl", ["-s", "--max-time", "40", "-A", UA, "-w", "\n%{http_code}", url], { maxBuffer: 1 << 26, encoding: "utf8" });
   const i = stdout.lastIndexOf("\n"), code = stdout.slice(i + 1);
   if (code !== "200") throw new Error(`${code} en ${ruta}`); // 403/429: no insisto, paro esa búsqueda
   return stdout.slice(0, i);
@@ -83,7 +104,28 @@ async function relevar(db, hoy) {
   return vistos.size;
 }
 
-const mediana = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+// Una vez por aviso (y solo los que entran en el presupuesto), de mejor a peor oportunidad: pide su página para saber hace cuánto
+// se publicó. Tope por corrida para no insistir; si el sitio rechaza un pedido, paro y sigo en la próxima corrida.
+async function detalles(db, hoy, max) {
+  const pend = Object.values(db.items).filter((i) => i.active && i.total != null && i.total <= TOPE && !i.detalle)
+    .sort((a, b) => (b.desc ?? -999) - (a.desc ?? -999)).slice(0, max);
+  let ok = 0, seguidos = 0;
+  for (const it of pend) {
+    await new Promise((r) => setTimeout(r, PAUSA_MS));
+    try {
+      const dias = diasPublicado(await bajar(it.url));
+      it.detalle = true; ok++; seguidos = 0;
+      if (ok % 20 === 0) fs.writeFileSync(DB, JSON.stringify(db)); // guardo el avance por si se corta
+      if (dias != null) it.pub = new Date(Date.parse(hoy) - dias * 864e5).toISOString().slice(0, 10);
+    } catch (e) { // un fallo suelto se salta; tres seguidos (bloqueo) cortan y queda para la próxima corrida
+      console.warn(`Detalles: falló ${it.id} (${e.message.split("\n")[0].slice(0, 80)})`);
+      if (++seguidos >= 3) break;
+    }
+  }
+  console.log(`Detalles: ${ok} de ${pend.length} consultados.`);
+}
+
+const mediana =(a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 // "Oportunidad" = cuánto más barato que la mediana de avisos comparables (misma cantidad de ambientes,
 // mismo barrio si hay >=5, si no toda la zona). Compara $/m² si hay m², si no el total.
@@ -109,9 +151,10 @@ async function main() {
   const db = fs.existsSync(DB) ? JSON.parse(fs.readFileSync(DB, "utf8")) : { items: {} };
   // --diario: para la tarea que corre al prender la PC; si ya se relevó hace poco, no vuelvo a pedir.
   if (process.argv.includes("--diario") && db.updated && Date.now() - new Date(db.updated) < 20 * 36e5) return console.log("Ya actualizado hoy.");
-  const vistos = await relevar(db, hoy);
+  const vistos = process.argv.includes("--solo-detalles") ? 1 : await relevar(db, hoy);
   if (!vistos) throw new Error("No se pudo bajar ningún aviso (¿bloqueo?): no toco los datos.");
   puntuar(Object.values(db.items));
+  await detalles(db, hoy, Number(process.argv.find((a) => a.startsWith("--detalles="))?.slice(11) ?? MAX_DETALLES));
   db.updated = new Date().toISOString();
   fs.writeFileSync(DB, JSON.stringify(db));
   fs.writeFileSync("data.js", `window.TRACKER=${JSON.stringify({ updated: db.updated, tope: TOPE, items: Object.values(db.items).filter((i) => i.active && i.total != null) })};`);
@@ -125,6 +168,8 @@ if (process.argv.includes("--test")) {
   assert.deepEqual([a.precio, a.exp, a.m2, a.amb, a.usd, a.loc], [650000, 155000, 28, 1, false, "Olivos, Vicente López"]);
   assert.deepEqual([b.usd, b.exp, b.m2, b.amb], [true, null, null, 2]);
   assert.equal(a.url, "https://www.zonaprop.com.ar/p/1.html");
+  assert.deepEqual(["Contrato por 18 meses, incremento", "honorarios, contrato 2 años, ajuste trimestral", "Ofrece 2 años de contrato", "ajuste cada 3 meses", "contrato dos años"].map(contratoMeses), [18, 24, 24, null, 24]);
+  assert.deepEqual(["Publicado hace 70 días", "Publicado hoy", "Publicado hace 2 meses", "Publicado por múltiples"].map(diasPublicado), [70, 0, 60, null]);
   const mk = (id, total) => ({ id, active: true, total, amb: 1, m2: 30, loc: "Olivos" });
   const its = [1, 2, 3, 4, 5].map((n) => mk(n, 800_000)).concat(mk(9, 600_000));
   puntuar(its);

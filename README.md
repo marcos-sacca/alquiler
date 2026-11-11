@@ -28,3 +28,5 @@ Se probó correrlo en GitHub Actions y no sirve: Zonaprop bloquea a los servidor
 - Avisos en dólares, sin precio, temporarios o con precio absurdo (< $200.000) no entran al ranking.
 - Si el aviso no muestra expensas se lo marca "¿expensas?": el total real puede ser mayor.
 - Para esto se usa `curl.exe` (viene con Windows) porque Cloudflare desafía al `fetch` de Node. Pide 1 página cada 4 s, 1 vez por día.
+- **Publicado hace N días**: sale de la página de cada aviso, que se pide una sola vez (hasta 80 por corrida, de mejor a peor oportunidad; --detalles=N cambia el tope, --solo-detalles no repite el relevamiento). Si todavía no se consultó, la tarjeta dice desde cuándo lo vemos.
+- **Contrato**: no es un dato del aviso; solo se muestra si el dueño lo escribe en la descripción (hoy lo hace cerca del 10%).

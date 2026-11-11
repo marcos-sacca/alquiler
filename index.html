@@ -68,6 +68,7 @@
   .gl { position:relative; height:16px; font-size:12px; color:var(--mut); } .gl span { position:absolute; left:50%; transform:translateX(-50%); white-space:nowrap; }
 
   .meta { margin-top:10px; font-weight:500; } .addr { color:var(--mut); font-size:15px; }
+  .facts { display:flex; flex-wrap:wrap; gap:2px 14px; color:var(--mut); font-size:14px; margin-top:6px; }
   .foot { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; }
   .tags { display:flex; gap:6px; flex-wrap:wrap; }
   .tag { font-size:12px; font-weight:600; padding:3px 9px; border-radius:99px; background:var(--warn-bg); color:var(--warn); }
@@ -111,12 +112,16 @@ const money = (n) => "$ " + Math.round(n).toLocaleString("es-AR");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 D.items.forEach((i) => { if (i.m2 < 8) i.m2 = null; }); // dato mal cargado
 const hace7 = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-const esNuevo = (i) => i.first >= hace7;
+const fecha = (i) => i.pub ?? i.first; // publicación real si la tenemos; si no, el día que la vimos por primera vez
+const esNuevo = (i) => fecha(i) >= hace7;
+const dias = (d) => Math.max(0, Math.round((Date.now() - new Date(d + "T12:00:00")) / 864e5));
+const hace = (d) => { const n = dias(d); return n === 0 ? "hoy" : n === 1 ? "ayer" : n < 60 ? `hace ${n} días` : `hace ${Math.round(n / 30)} meses`; };
+const contrato = (m) => (m % 12 === 0 ? (m / 12 === 1 ? "1 año" : m / 12 + " años") : m + " meses");
 const bajo = (i) => i.hist.length > 1 && i.hist.at(-1)[1] < i.hist.at(-2)[1];
 const barrio = (i) => i.loc.split(",")[0];
 
 const M2 = [[0, 30, "Hasta 30 m²"], [30, 40, "30 a 40 m²"], [40, 50, "40 a 50 m²"], [50, 65, "50 a 65 m²"], [65, 1e9, "65 m² o más"]];
-const S = { m2: [], amb: "", ord: "desc", zona: "", nuevos: false, bajas: false, max: D.tope };
+const S = { m2: [], amb: "", ord: "desc", zonas: [], nuevos: false, bajas: false, max: D.tope };
 try { Object.assign(S, JSON.parse(localStorage.getItem("filtros") || "{}")); } catch {}
 
 function hora(iso) {
@@ -142,7 +147,7 @@ function chips() {
 
 function sync() {
   $("max").value = S.max; $("maxv").textContent = money(S.max);
-  document.querySelectorAll("[data-zona]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.zona === S.zona));
+  document.querySelectorAll("[data-zona]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.zona ? S.zonas.includes(b.dataset.zona) : !S.zonas.length));
   document.querySelectorAll("[data-m2]").forEach((b) => b.setAttribute("aria-pressed", S.m2.includes(+b.dataset.m2)));
   document.querySelectorAll("[data-amb]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.amb === S.amb));
   document.querySelectorAll("[data-ord]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.ord === S.ord));
@@ -168,6 +173,7 @@ function card(i, k) {
     <div class="break">${desglose}</div>${medidor(i, k)}
     <div class="meta">${i.amb ?? "?"} amb. · ${i.m2 ? i.m2 + " m²" : "m² sin dato"} · ${esc(barrio(i))}</div>
     <div class="addr">${esc(i.dir)}</div>
+    <div class="facts"><span>${i.pub ? "Publicado " + hace(i.pub) : "Lo vemos desde " + hace(i.first)}</span>${i.contrato ? `<span>Contrato de ${contrato(i.contrato)}</span>` : ""}</div>
     <div class="foot"><div class="tags">${tags}</div><span class="open">Abrir en Zonaprop
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3M11 3h6v6M17 3l-8 8"/></svg></span></div></a>`;
 }
@@ -176,19 +182,19 @@ function draw() {
   sync();
   const rows = D.items.filter((i) => i.total <= S.max && (!S.amb ? !i.amb || i.amb <= 2 : i.amb == S.amb)
     && (!S.m2.length || (i.m2 && S.m2.some((k) => i.m2 >= M2[k][0] && i.m2 < M2[k][1])))
-    && (!S.zona || barrio(i) === S.zona) && (!S.nuevos || esNuevo(i)) && (!S.bajas || bajo(i)));
+    && (!S.zonas.length || S.zonas.includes(barrio(i))) && (!S.nuevos || esNuevo(i)) && (!S.bajas || bajo(i)));
   rows.sort(S.ord === "total" ? (a, b) => a.total - b.total
-    : S.ord === "first" ? (a, b) => (b.first > a.first ? 1 : b.first < a.first ? -1 : (b.desc ?? -999) - (a.desc ?? -999))
+    : S.ord === "first" ? (a, b) => (fecha(b) > fecha(a) ? 1 : fecha(b) < fecha(a) ? -1 : (b.desc ?? -999) - (a.desc ?? -999))
     : (a, b) => (b.desc ?? -999) - (a.desc ?? -999));
   $("count").textContent = rows.length ? `${rows.length} avisos` : "";
-  $("list").innerHTML = rows.map(card).join("") || `<div class="empty">Ningún aviso con estos filtros. Subí el tope de precio, sacá algún rango de m² o elegí otra zona.</div>`;
+  $("list").innerHTML = rows.map(card).join("") || `<div class="empty">Ningún aviso con estos filtros. Subí el tope de precio, sacá algún rango de m² o sumá otra zona.</div>`;
   // Único movimiento de la página: cada punto se desliza desde el precio típico hasta su lugar.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".gauge.pre").forEach((g) => g.classList.remove("pre"))));
 }
 
 document.addEventListener("click", (e) => {
   const b = e.target.closest(".chip"); if (!b) return;
-  if ("zona" in b.dataset) S.zona = b.dataset.zona;
+  if ("zona" in b.dataset) S.zonas = !b.dataset.zona ? [] : S.zonas.includes(b.dataset.zona) ? S.zonas.filter((z) => z !== b.dataset.zona) : [...S.zonas, b.dataset.zona];
   else if ("m2" in b.dataset) S.m2 = S.m2.includes(+b.dataset.m2) ? S.m2.filter((k) => k != b.dataset.m2) : [...S.m2, +b.dataset.m2];
   else if ("amb" in b.dataset) S.amb = b.dataset.amb;
   else if ("ord" in b.dataset) S.ord = b.dataset.ord;
