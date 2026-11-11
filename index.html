@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#12292B">
+<title>Alquileres en Vicente López</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#EEF2F1; --surface:#FFFFFF; --ink:#12292B; --mut:#576B6B; --line:#D5DEDC;
+    --good:#00875A; --good-bg:#DDF3E8; --warn:#8A6400; --warn-bg:#FDF0C4; --accent:#12292B; --on-accent:#FFFFFF;
+    --display:"Bricolage Grotesque", system-ui, sans-serif; --body:"Hanken Grotesk", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0E1B1C; --surface:#162628; --ink:#E8F0EE; --mut:#93A9A8; --line:#274042;
+            --good:#4ADE9A; --good-bg:#12382B; --warn:#F2C94C; --warn-bg:#3A3008; --accent:#E8F0EE; --on-accent:#0E1B1C; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 var(--body); -webkit-text-size-adjust:100%; }
+  main { max-width:1000px; margin:0 auto; padding:20px 16px 48px; }
+  :focus-visible { outline:3px solid var(--good); outline-offset:2px; }
+
+  h1 { font:700 clamp(28px, 7vw, 40px)/1.05 var(--display); font-stretch:85%; letter-spacing:-.02em; margin:0 0 6px; }
+  .updated { color:var(--mut); font-size:14px; margin:0 0 16px; }
+  .lead { font-size:18px; line-height:1.4; max-width:34em; margin:0 0 20px; }
+  .lead b { font-family:var(--display); font-weight:700; }
+
+  .filters { display:grid; gap:12px; margin-bottom:16px; }
+  .row { display:flex; gap:8px; overflow-x:auto; scroll-snap-type:x proximity; padding:2px 16px; margin:0 -16px; scrollbar-width:none; scroll-padding-left:16px; }
+  .row::-webkit-scrollbar { display:none; }
+  .chip { flex:none; scroll-snap-align:start; font:500 15px var(--body); color:var(--ink); background:var(--surface); border:1px solid var(--line);
+          border-radius:99px; padding:8px 14px; min-height:40px; cursor:pointer; transition:transform .12s ease, background-color .15s, color .15s; }
+  .chip:active { transform:scale(.96); }
+  .chip[aria-pressed="true"] { background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+  .chip small { color:inherit; opacity:.6; margin-left:4px; }
+  .budget { display:grid; gap:6px; }
+  .budget label { font-size:15px; color:var(--mut); } .budget output { color:var(--ink); font:700 18px var(--display); }
+  input[type=range] { width:100%; accent-color:var(--good); height:32px; margin:0; }
+  .seg { display:flex; gap:8px; flex-wrap:wrap; }
+
+  .count { color:var(--mut); font-size:14px; margin:0 0 10px; }
+  .grid { display:grid; gap:12px; grid-template-columns:1fr; }
+  @media (min-width:760px) { .grid { grid-template-columns:1fr 1fr; } .row { margin:0; padding:2px 0; flex-wrap:wrap; } }
+
+  .card { display:block; color:inherit; text-decoration:none; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:16px;
+          transition:transform .15s ease, border-color .15s; }
+  .card:active { transform:scale(.985); }
+  @media (hover:hover) { .card:hover { border-color:var(--ink); } }
+  .head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .price { font:700 30px/1 var(--display); font-stretch:90%; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .verdict { font-size:14px; font-weight:600; color:var(--mut); }
+  .verdict.good { color:var(--good); }
+  .break { color:var(--mut); font-size:14px; margin-top:6px; } .break em { font-style:normal; color:var(--warn); font-weight:600; }
+
+  /* Medidor: la marca es el precio típico del barrio; el punto, este aviso. */
+  .gauge { position:relative; height:28px; margin:14px 0 2px; }
+  .track { position:absolute; left:0; right:0; top:11px; height:6px; border-radius:3px; background:var(--line); }
+  .fill { position:absolute; top:11px; height:6px; border-radius:3px; background:var(--good); left:var(--from); width:var(--w); }
+  .fill.pricey { background:var(--warn); }
+  .tick { position:absolute; left:50%; top:4px; width:2px; height:20px; margin-left:-1px; background:var(--ink); border-radius:1px; }
+  .dot { position:absolute; top:6px; left:var(--at); width:16px; height:16px; margin-left:-8px; border-radius:50%; background:var(--good); border:3px solid var(--surface); box-shadow:0 0 0 1px var(--good); }
+  .dot.pricey { background:var(--warn); box-shadow:0 0 0 1px var(--warn); }
+  .pre .dot { left:50%; } .pre .fill { left:50%; width:0; }
+  .gauge .dot, .gauge .fill { transition:left .7s cubic-bezier(.2,.8,.2,1) var(--delay,0s), width .7s cubic-bezier(.2,.8,.2,1) var(--delay,0s); }
+  .gl { position:relative; height:16px; font-size:12px; color:var(--mut); } .gl span { position:absolute; left:50%; transform:translateX(-50%); white-space:nowrap; }
+
+  .meta { margin-top:10px; font-weight:500; } .addr { color:var(--mut); font-size:15px; }
+  .foot { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; }
+  .tags { display:flex; gap:6px; flex-wrap:wrap; }
+  .tag { font-size:12px; font-weight:600; padding:3px 9px; border-radius:99px; background:var(--warn-bg); color:var(--warn); }
+  .open { display:inline-flex; gap:6px; align-items:center; font-weight:600; font-size:15px; color:var(--ink); margin-left:auto; }
+  .open svg { width:16px; height:16px; }
+
+  .empty { background:var(--surface); border:1px dashed var(--line); border-radius:16px; padding:24px; color:var(--mut); }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Alquileres en Vicente López</h1>
+  <p class="updated" id="updated"></p>
+  <p class="lead" id="lead"></p>
+
+  <section class="filters" aria-label="Filtros">
+    <div class="budget">
+      <label for="max">Hasta, entre alquiler y expensas: <output id="maxv"></output></label>
+      <input id="max" type="range" min="400000" max="1200000" step="25000">
+    </div>
+    <div class="row" id="zonas" role="group" aria-label="Zona"></div>
+    <div class="seg" role="group" aria-label="Ambientes y orden">
+      <button class="chip" data-amb="">1 y 2 amb.</button><button class="chip" data-amb="1">1 amb.</button><button class="chip" data-amb="2">2 amb.</button>
+    </div>
+    <div class="seg" role="group" aria-label="Orden">
+      <button class="chip" data-ord="desc">Mejor precio</button><button class="chip" data-ord="total">Más barato</button><button class="chip" data-ord="first">Recientes</button>
+    </div>
+    <div class="seg"><button class="chip" id="nuevos">Nuevos esta semana</button><button class="chip" id="bajas">Bajaron de precio</button></div>
+  </section>
+
+  <p class="count" id="count" aria-live="polite"></p>
+  <div class="grid" id="list"></div>
+</main>
+<script src="data.js"></script>
+<script>
+const D = window.TRACKER || { items: [], tope: 900000 };
+const $ = (id) => document.getElementById(id);
+const money = (n) => "$ " + Math.round(n).toLocaleString("es-AR");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const hace7 = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+const esNuevo = (i) => i.first >= hace7;
+const bajo = (i) => i.hist.length > 1 && i.hist.at(-1)[1] < i.hist.at(-2)[1];
+const barrio = (i) => i.loc.split(",")[0];
+
+const S = { amb: "", ord: "desc", zona: "", nuevos: false, bajas: false, max: D.tope };
+try { Object.assign(S, JSON.parse(localStorage.getItem("filtros") || "{}")); } catch {}
+
+function hora(iso) {
+  const h = (Date.now() - new Date(iso)) / 36e5;
+  return h < 1 ? "hace menos de una hora" : h < 24 ? `hace ${Math.round(h)} h` : `hace ${Math.round(h / 24)} días`;
+}
+
+function cabecera() {
+  if (!D.items.length) { $("lead").textContent = "Todavía no hay datos. Corré node tracker.mjs para relevar los avisos."; return; }
+  $("updated").textContent = "Actualizado " + hora(D.updated) + ". Vicente López, Martínez y Villa Adelina.";
+  const en = D.items.filter((i) => i.total <= D.tope && (!i.amb || i.amb <= 2));
+  const n = en.filter(esNuevo).length, b = en.filter(bajo).length;
+  $("lead").innerHTML = `Hay <b>${en.length} avisos</b> de 1 y 2 ambientes hasta ${money(D.tope)}.` + (n < en.length ? ` ${n} son nuevos de esta semana y ${b} bajaron de precio.` : " Desde mañana vas a ver cuáles son nuevos y cuáles bajaron de precio.");
+}
+
+function chips() {
+  const cont = {};
+  D.items.forEach((i) => (cont[barrio(i)] = (cont[barrio(i)] || 0) + 1));
+  const zs = Object.keys(cont).sort((a, b) => cont[b] - cont[a]);
+  $("zonas").innerHTML = ["", ...zs].map((z) => `<button class="chip" data-zona="${esc(z)}">${z ? esc(z) + `<small>${cont[z]}</small>` : "Todas las zonas"}</button>`).join("");
+}
+
+function sync() {
+  $("max").value = S.max; $("maxv").textContent = money(S.max);
+  document.querySelectorAll("[data-zona]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.zona === S.zona));
+  document.querySelectorAll("[data-amb]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.amb === S.amb));
+  document.querySelectorAll("[data-ord]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.ord === S.ord));
+  $("nuevos").setAttribute("aria-pressed", S.nuevos); $("bajas").setAttribute("aria-pressed", S.bajas);
+  try { localStorage.setItem("filtros", JSON.stringify(S)); } catch {}
+}
+
+function medidor(i, k) {
+  if (i.desc == null) return "";
+  const r = Math.min(1.6, Math.max(0.4, 1 - i.desc / 100)), at = (r - 0.4) / 1.2 * 100, caro = r > 1;
+  const from = Math.min(at, 50), w = Math.abs(at - 50);
+  return `<div class="gauge pre ${caro ? "p" : ""}" style="--at:${at}%;--from:${from}%;--w:${w}%;--delay:${Math.min(k, 8) * 0.04}s" aria-hidden="true">
+    <div class="track"></div><div class="fill ${caro ? "pricey" : ""}"></div><div class="tick"></div><div class="dot ${caro ? "pricey" : ""}"></div></div>
+    <div class="gl" aria-hidden="true"><span>típico del barrio</span></div>`;
+}
+
+function card(i, k) {
+  const v = i.desc == null ? "Sin comparar" : i.desc > 0 ? `${i.desc}% más barato que lo típico` : i.desc < 0 ? `${-i.desc}% más caro que lo típico` : "En el precio típico";
+  const desglose = i.expMissing ? `Alquiler ${money(i.precio)}. <em>El aviso no dice las expensas.</em>` : `Alquiler ${money(i.precio)} + expensas ${money(i.exp ?? 0)}`;
+  const tags = [esNuevo(i) && "Nuevo", bajo(i) && `Bajó de ${money(i.hist.at(-2)[1])}`].filter(Boolean).map((t) => `<span class="tag">${t}</span>`).join("");
+  return `<a class="card" href="${esc(i.url)}" target="_blank" rel="noopener">
+    <div class="head"><span class="price">${money(i.total)}</span><span class="verdict ${i.desc >= 15 ? "good" : ""}">${v}</span></div>
+    <div class="break">${desglose}</div>${medidor(i, k)}
+    <div class="meta">${i.amb ?? "?"} amb. · ${i.m2 ? i.m2 + " m²" : "m² sin dato"} · ${esc(barrio(i))}</div>
+    <div class="addr">${esc(i.dir)}</div>
+    <div class="foot"><div class="tags">${tags}</div><span class="open">Abrir en Zonaprop
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3M11 3h6v6M17 3l-8 8"/></svg></span></div></a>`;
+}
+
+function draw() {
+  sync();
+  const rows = D.items.filter((i) => i.total <= S.max && (!S.amb ? !i.amb || i.amb <= 2 : i.amb == S.amb)
+    && (!S.zona || barrio(i) === S.zona) && (!S.nuevos || esNuevo(i)) && (!S.bajas || bajo(i)));
+  rows.sort(S.ord === "total" ? (a, b) => a.total - b.total
+    : S.ord === "first" ? (a, b) => (b.first > a.first ? 1 : b.first < a.first ? -1 : (b.desc ?? -999) - (a.desc ?? -999))
+    : (a, b) => (b.desc ?? -999) - (a.desc ?? -999));
+  $("count").textContent = rows.length ? `${rows.length} avisos` : "";
+  $("list").innerHTML = rows.map(card).join("") || `<div class="empty">Ningún aviso con estos filtros. Subí el tope de precio o elegí otra zona.</div>`;
+  // Único movimiento de la página: cada punto se desliza desde el precio típico hasta su lugar.
+  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".gauge.pre").forEach((g) => g.classList.remove("pre"))));
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  if ("zona" in b.dataset) S.zona = b.dataset.zona;
+  else if ("amb" in b.dataset) S.amb = b.dataset.amb;
+  else if ("ord" in b.dataset) S.ord = b.dataset.ord;
+  else if (b.id === "nuevos") S.nuevos = !S.nuevos;
+  else if (b.id === "bajas") S.bajas = !S.bajas;
+  draw();
+});
+$("max").oninput = (e) => { S.max = +e.target.value; draw(); };
+cabecera(); chips(); draw();
+</script>
+</body>
+</html>
