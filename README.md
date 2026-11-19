@@ -1,6 +1,6 @@
-# Tracker de alquileres (Zonaprop)
+﻿# Tracker de alquileres (Zonaprop)
 
-Vicente López, Martínez y Villa Adelina · departamentos y PH de 1 y 2 ambientes · tope $900.000 (alquiler + expensas).
+Vicente López, Martínez, Villa Adelina, Belgrano, Núñez y Saavedra · departamentos y PH de 1 y 2 ambientes · tope $900.000 (alquiler + expensas).
 
 ```
 node tracker.mjs          # baja los avisos (~6 min), actualiza data/listings.json y data.js

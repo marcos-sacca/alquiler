@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#12292B">
-<title>Alquileres en Vicente López</title>
+<title>Alquileres en zona norte</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
@@ -81,7 +81,7 @@
 </head>
 <body>
 <main>
-  <h1>Alquileres en Vicente López</h1>
+  <h1>Alquileres en zona norte</h1>
   <p class="updated" id="updated"></p>
   <p class="lead" id="lead"></p>
 
@@ -118,7 +118,7 @@ const dias = (d) => Math.max(0, Math.round((Date.now() - new Date(d + "T12:00:00
 const hace = (d) => { const n = dias(d); return n === 0 ? "hoy" : n === 1 ? "ayer" : n < 60 ? `hace ${n} días` : `hace ${Math.round(n / 30)} meses`; };
 const contrato = (m) => (m % 12 === 0 ? (m / 12 === 1 ? "1 año" : m / 12 + " años") : m + " meses");
 const bajo = (i) => i.hist.length > 1 && i.hist.at(-1)[1] < i.hist.at(-2)[1];
-const barrio = (i) => i.loc.split(",")[0];
+const barrio = (i) => i.loc.match(/Belgrano|N[uú]ñez|Saavedra/i)?.[0].replace(/^Nunez$/i, "Núñez") ?? i.loc.split(",")[0]; // "Belgrano R, Belgrano" -> Belgrano
 
 const M2 = [[0, 30, "Hasta 30 m²"], [30, 40, "30 a 40 m²"], [40, 50, "40 a 50 m²"], [50, 65, "50 a 65 m²"], [65, 1e9, "65 m² o más"]];
 const S = { m2: [], amb: "", ord: "desc", zonas: [], nuevos: false, bajas: false, max: D.tope };
@@ -131,7 +131,7 @@ function hora(iso) {
 
 function cabecera() {
   if (!D.items.length) { $("lead").textContent = "Todavía no hay datos. Corré node tracker.mjs para relevar los avisos."; return; }
-  $("updated").textContent = "Actualizado " + hora(D.updated) + ". Vicente López, Martínez y Villa Adelina.";
+  $("updated").textContent = "Actualizado " + hora(D.updated) + ". Vicente López, Martínez, Villa Adelina, Belgrano, Núñez y Saavedra.";
   const en = D.items.filter((i) => i.total <= D.tope && (!i.amb || i.amb <= 2));
   const n = en.filter(esNuevo).length, b = en.filter(bajo).length;
   $("lead").innerHTML = `Hay <b>${en.length} avisos</b> de 1 y 2 ambientes hasta ${money(D.tope)}.` + (n < en.length ? ` ${n} son nuevos de esta semana y ${b} bajaron de precio.` : " Desde mañana vas a ver cuáles son nuevos y cuáles bajaron de precio.");
@@ -140,7 +140,7 @@ function cabecera() {
 function chips() {
   $("m2s").innerHTML = M2.map((r, k) => `<button class="chip" data-m2="${k}">${r[2]}</button>`).join("");
   const cont = {};
-  D.items.forEach((i) => (cont[barrio(i)] = (cont[barrio(i)] || 0) + 1));
+  D.items.filter((i) => i.total <= D.tope && (!i.amb || i.amb <= 2)).forEach((i) => (cont[barrio(i)] = (cont[barrio(i)] || 0) + 1)); // solo los que entran en el tope
   const zs = Object.keys(cont).sort((a, b) => cont[b] - cont[a]);
   $("zonas").innerHTML = ["", ...zs].map((z) => `<button class="chip" data-zona="${esc(z)}">${z ? esc(z) + `<small>${cont[z]}</small>` : "Todas las zonas"}</button>`).join("");
 }

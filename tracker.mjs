@@ -6,13 +6,19 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const run = promisify(execFile);
 
-const ZONAS = ["vicente-lopez", "martinez", "villa-adelina"];
 const TIPOS = ["departamentos", "ph"];
 // Zonaprop rellena las páginas con avisos de zonas vecinas: solo me quedo con las que busco.
-const LOC_OK = /Vicente L[oó]pez|Mart[ií]nez|Villa Adelina/i;
-// Filtros del propio sitio. Zonaprop bloquea (403) de la página 10 en adelante, por eso la búsqueda de 2 amb. tiene una versión
-// "hasta $900.000" (cabe en 9 páginas) para no perder ningún aviso dentro del presupuesto.
-const AMBS = ["1-ambiente", "2-ambientes", "2-ambientes-menos-900000-pesos"];
+const CABA_RE = /Belgrano|N[uú]ñez|Saavedra/i;
+const LOC_OK = new RegExp(`Vicente L[oó]pez|Mart[ií]nez|Villa Adelina|${CABA_RE.source}`, "i");
+// Filtros del propio sitio. Zonaprop bloquea (403) de la página 10 en adelante (270 avisos por búsqueda), así que:
+// - "1-ambiente" y "2-ambientes" sin precio dan una muestra de todo el mercado, que sirve para saber qué es "típico".
+// - Las versiones "hasta $900.000" aseguran no perder ningún aviso dentro del presupuesto. Si una pasa los 270, se pide también
+//   ordenada al revés (la descendente se salta cuando la ascendente ya entró completa).
+const HASTA = "menos-900000-pesos";
+const BASE = ["1-ambiente", "2-ambientes"];
+const GBA = { zonas: ["vicente-lopez", "martinez", "villa-adelina"], sufijos: [...BASE, `2-ambientes-${HASTA}`] };
+const CABA = { zonas: ["belgrano", "nunez", "saavedra"], sufijos: [...BASE, ...BASE.flatMap((a) => [`${a}-${HASTA}-orden-precio-ascendente`, `${a}-${HASTA}-orden-precio-descendente`])] };
+const BUSQUEDAS = [GBA, CABA].flatMap((g) => TIPOS.flatMap((tipo) => g.zonas.flatMap((zona) => g.sufijos.map((suf) => ({ tipo, zona, suf })))));
 const MAX_PAGINAS = 9, PAUSA_MS = 4000, TOPE = 900_000, PISO = 200_000, MAX_DETALLES = 80; // MAX_DETALLES: páginas de aviso que se piden por corrida
 const UA = "alquiler-tracker-personal/1.0";
 const DB = "data/listings.json";
@@ -72,8 +78,11 @@ async function bajar(ruta) {
 
 async function relevar(db, hoy) {
   const vistos = new Set(), completas = [];
-  for (const tipo of TIPOS) for (const zona of ZONAS) for (const amb of AMBS) {
+  let anteriorCompleta = false;
+  for (const { tipo, zona, suf: amb } of BUSQUEDAS) {
+    if (amb.endsWith("descendente") && anteriorCompleta) continue;
     const origen = `${tipo}/${zona}/${amb}`, propios = new Set();
+    anteriorCompleta = false;
     try {
       let paginas = MAX_PAGINAS, totalAvisos = 0;
       for (let p = 1; p <= paginas; p++) {
@@ -95,12 +104,15 @@ async function relevar(db, hoy) {
           if (total != null && it.hist.at(-1)?.[1] !== total) it.hist.push([hoy, total]);
         }
       }
-      if (paginas * 30 >= totalAvisos) completas.push(origen); // si quedó truncada no sé qué avisos faltan: no doy de baja nada
+      anteriorCompleta = paginas * 30 >= totalAvisos;
+      if (anteriorCompleta) completas.push(origen); // si quedó truncada no sé qué avisos faltan: no doy de baja nada
       console.log(`${origen}: ok`);
     } catch (e) { console.warn(`${origen}: incompleta (${e.message}); no doy de baja sus avisos`); }
   }
   // Un aviso que no apareció en una búsqueda completa ya no está publicado.
-  for (const it of Object.values(db.items)) if (completas.includes(it.origen) && !vistos.has(it.id)) it.active = false;
+  // Los de búsquedas truncadas (muestras) no entran ahí: se dan de baja si hace más de 4 días que no aparecen.
+  const corte = new Date(Date.parse(hoy) - 4 * 864e5).toISOString().slice(0, 10);
+  for (const it of Object.values(db.items)) if ((completas.includes(it.origen) && !vistos.has(it.id)) || it.last < corte) it.active = false;
   return vistos.size;
 }
 
@@ -132,7 +144,9 @@ const mediana =(a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 
 export function puntuar(items) {
   const act = items.filter((i) => i.active && i.total != null && i.amb);
   const med = (i, f) => {
-    for (const g of [act.filter((x) => x.amb === i.amb && x.loc === i.loc), act.filter((x) => x.amb === i.amb)]) {
+    // Del más parecido al más amplio: mismo barrio, misma ciudad (Capital o GBA), todo. Nunca se mezcla Belgrano con Olivos si hay datos.
+    const barrio = (x) => x.loc.match(CABA_RE)?.[0].toLowerCase().replace("ñ", "n") ?? x.loc, caba = (x) => CABA_RE.test(x.loc);
+    for (const g of [act.filter((x) => x.amb === i.amb && barrio(x) === barrio(i)), act.filter((x) => x.amb === i.amb && caba(x) === caba(i)), act.filter((x) => x.amb === i.amb)]) {
       const v = g.map(f).filter(Number.isFinite);
       if (v.length >= 5) return mediana(v);
     }
@@ -174,5 +188,9 @@ if (process.argv.includes("--test")) {
   const its = [1, 2, 3, 4, 5].map((n) => mk(n, 800_000)).concat(mk(9, 600_000));
   puntuar(its);
   assert.equal(its.at(-1).desc, 25);
+  // Un aviso de Belgrano barato contra Belgrano, no contra el resto: 5 de $1.000.000 y uno de $800.000 en Belgrano; 5 de $500.000 en Olivos.
+  const mix = [1, 2, 3, 4, 5].map((n) => ({ ...mk(n, 1_000_000), loc: "Belgrano, Capital Federal" })).concat({ ...mk(6, 800_000), loc: "Belgrano R, Belgrano" }, [7, 8, 9, 10, 11].map((n) => mk(n, 500_000)));
+  puntuar(mix);
+  assert.equal(mix[5].desc, 20);
   console.log("tests ok");
 } else await main();
